@@ -59,6 +59,19 @@ Setiap kata yang Anda ketik akan menggerakkan kereta Anda maju dari satu stasiun
 
 ---
 
+## 📜 Changelog
+
+### v1.1.0 - KBBI Mode & UI Polish (Current)
+* 📖 **Fitur Baru**: Menambahkan "Mode Kata KBBI" dengan koleksi lebih dari 25.000 kata dasar acak untuk tantangan mengetik ekstra.
+* ⚖️ **Penyesuaian Bot**: Memperlambat dan menyempurnakan kecepatan gerak Bot sesuai dengan metrik *Words Per Minute* (WPM) di tingkat Mudah, Normal, dan Sulit.
+* 💅 **UI/UX**: Memperbaiki tata letak (alignment) elemen pengaturan pada Menu Utama (*Glassmorphism*) menjadi simetris dan mengganti *text-logo* dengan *image-logo* kustom berbentuk kapsul.
+
+### v1.0.0 - Major Overhaul & Initial Release
+* 🚀 **Perombakan Sistem**: Beralih sepenuhnya dari SVG ke **Peta Leaflet (CartoDB)** dengan fitur *Auto-Pan*.
+* 🚄 **Rute Baru**: Penambahan fitur cabang "Lin Nambo".
+* ⌨️ **Mekanik Monkeytype**: Implementasi fitur perbaikan *typo* wajib menggunakan tombol `Backspace`.
+* 💎 **Desain Antarmuka**: Peluncuran desain layar penuh *Glassmorphism* dengan elemen kartu-kartu statis (menggantikan elemen dropdown).
+
 <div align="center">
   Dibuat dengan ❤️ untuk para komuter Jabodetabek. Selamat Mengetik!
 </div>

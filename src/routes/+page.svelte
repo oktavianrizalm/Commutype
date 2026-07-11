@@ -11,6 +11,8 @@
     let lastTime: number = 0;
 
     let showDifficultySetup = $state(false);
+    let kbbiWords: string[] = [];
+    let loadingKbbi = $state(false);
 
     onDestroy(() => {
         if (botAnimationId) cancelAnimationFrame(botAnimationId);
@@ -18,12 +20,28 @@
 
     function getNextStationWord(distance: number) {
         if (distance < activeRoute.stations.length) {
+            if ($gameState.typingMode === 'kbbi' && kbbiWords.length > 0) {
+                const w1 = kbbiWords[Math.floor(Math.random() * kbbiWords.length)];
+                return w1;
+            }
             return activeRoute.stations[distance].name.toLowerCase();
         }
         return "finish";
     }
 
-    function startGame(mode: 'single' | 'vs-bot') {
+    async function startGame(mode: 'single' | 'vs-bot') {
+        if ($gameState.typingMode === 'kbbi' && kbbiWords.length === 0) {
+            loadingKbbi = true;
+            try {
+                // Lazy load JSON
+                const module = await import('$lib/data/kbbi.json');
+                kbbiWords = module.default;
+            } catch (e) {
+                console.error("Gagal memuat file KBBI", e);
+            }
+            loadingKbbi = false;
+        }
+
         const newWord = getNextStationWord(0);
         playerState.update(state => ({
             ...state,
@@ -214,6 +232,12 @@
             <div class="glass-panel menu-glass">
                 
                 <div class="theme-toggle">
+                    <span class="theme-label">Teks:</span>
+                    <div class="segmented-control" style="margin-right: 15px;">
+                        <button class:active={$gameState.typingMode === 'station'} on:click={() => gameState.update(s => ({ ...s, typingMode: 'station' }))}>Stasiun</button>
+                        <button class:active={$gameState.typingMode === 'kbbi'} on:click={() => gameState.update(s => ({ ...s, typingMode: 'kbbi' }))}>KBBI</button>
+                    </div>
+
                     <span class="theme-label">Tema Peta:</span>
                     <div class="segmented-control">
                         <button class:active={$gameState.mapTheme === 'dark'} on:click={() => gameState.update(s => ({ ...s, mapTheme: 'dark' }))}>Gelap</button>
@@ -243,7 +267,9 @@
                     </div>
 
                     <div class="mode-buttons">
-                        <button on:click={() => startGame('single')} class="glass-btn cta-btn outline-btn">Latihan (Single)</button>
+                        <button on:click={() => startGame('single')} class="glass-btn cta-btn outline-btn" disabled={loadingKbbi}>
+                            {loadingKbbi ? 'Memuat...' : 'Latihan (Single)'}
+                        </button>
                         <button on:click={() => showDifficultySetup = true} class="glass-btn bot-btn cta-btn">Lawan Bot</button>
                     </div>
                 {:else}
@@ -263,7 +289,9 @@
                         </div>
                         <div class="setup-actions">
                             <button class="glass-btn outline-btn cta-btn" on:click={() => showDifficultySetup = false}>Kembali</button>
-                            <button class="glass-btn bot-btn cta-btn" on:click={() => startGame('vs-bot')}>Mulai Balapan!</button>
+                            <button class="glass-btn bot-btn cta-btn" on:click={() => startGame('vs-bot')} disabled={loadingKbbi}>
+                                {loadingKbbi ? 'Memuat...' : 'Mulai Balapan!'}
+                            </button>
                         </div>
                     </div>
                 {/if}
@@ -492,7 +520,7 @@
     /* THEME TOGGLE */
     .theme-toggle {
         display: flex;
-        justify-content: flex-end;
+        justify-content: center;
         align-items: center;
         gap: 15px;
         margin-bottom: 20px;

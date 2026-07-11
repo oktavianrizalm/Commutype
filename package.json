@@ -22,6 +22,7 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"generate-passphrase-id": "^1.2.0",
 		"leaflet": "^1.9.4"
 	}
 }

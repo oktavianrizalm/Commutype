@@ -8,6 +8,7 @@ const initialGameState = {
     status: 'idle' as GameStatus,
     difficulty: 'normal' as Difficulty,
     gameMode: 'vs-bot' as GameMode,
+    typingMode: 'station' as 'station' | 'kbbi',
     selectedRouteId: 'bogor',
     mapTheme: 'dark' as 'dark' | 'light',
     startTime: 0,
