@@ -61,7 +61,12 @@ Setiap kata yang Anda ketik akan menggerakkan kereta Anda maju dari satu stasiun
 
 ## 📜 Changelog
 
-### v1.1.0 - KBBI Mode & UI Polish (Current)
+### v1.2.0 - Mobile Optimization & UX Polish (Current)
+* 📱 **Optimasi Layar Sentuh**: Perombakan tata letak CSS skala besar (melalui *media queries*) untuk memastikan game tampil sempurna, tidak terpotong, dan simetris di layar *smartphone* tipe apa pun.
+* 📏 **Perbaikan Teks Panjang**: Kata yang panjang (seperti "Universitas Indonesia") kini otomatis turun ke baris baru (*word wrap*) tanpa memutus *box* kursor pengetikan.
+* 🧹 **Pembersihan UI**: Menghapus teks instruksi stasiun tujuan yang redundan pada "Mode Stasiun" untuk menghemat ruang vertikal layar yang berharga.
+
+### v1.1.0 - KBBI Mode & UI Polish
 * 📖 **Fitur Baru**: Menambahkan "Mode Kata KBBI" dengan koleksi lebih dari 25.000 kata dasar acak untuk tantangan mengetik ekstra.
 * ⚖️ **Penyesuaian Bot**: Memperlambat dan menyempurnakan kecepatan gerak Bot sesuai dengan metrik *Words Per Minute* (WPM) di tingkat Mudah, Normal, dan Sulit.
 * 💅 **UI/UX**: Memperbaiki tata letak (alignment) elemen pengaturan pada Menu Utama (*Glassmorphism*) menjadi simetris dan mengganti *text-logo* dengan *image-logo* kustom berbentuk kapsul.

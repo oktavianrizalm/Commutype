@@ -325,16 +325,16 @@
             <div class="glass-panel typing-hud">
                 {#if $playerState.totalDistance === 0}
                     <p class="instruction">
-                        Ketik untuk memberangkatkan kereta: <strong class="destination-text" style="color: #2196f3;">
-                        {activeRoute.stations[0].name}
-                        </strong>
+                        Ketik untuk memberangkatkan kereta{#if $gameState.typingMode === 'kbbi'} menuju <strong class="destination-text" style="color: #2196f3;">{activeRoute.stations[0].name}</strong>{/if}:
                     </p>
                 {:else}
-                    <p class="instruction">
-                        Menuju stasiun: <strong class="destination-text">
-                        {activeRoute.stations[Math.min($playerState.totalDistance, activeRoute.stations.length - 1)].name}
-                        </strong>
-                    </p>
+                    {#if $gameState.typingMode === 'kbbi'}
+                        <p class="instruction">
+                            Menuju stasiun: <strong class="destination-text">
+                            {activeRoute.stations[Math.min($playerState.totalDistance, activeRoute.stations.length - 1)].name}
+                            </strong>
+                        </p>
+                    {/if}
                 {/if}
                 
                 <div class="word-display">
@@ -353,7 +353,7 @@
                             class:extra-char={isExtra}
                             class:current={i === typed.length}
                         >
-                            {charToRender === ' ' ? '\u00A0' : charToRender}
+                            {charToRender}
                         </span>
                     {/each}
                     
@@ -420,6 +420,10 @@
 </main>
 
 <style>
+    :global(*) {
+        box-sizing: border-box;
+    }
+
     :global(body) {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background-color: #000;
@@ -685,6 +689,8 @@
         font-family: 'Consolas', 'Courier New', monospace;
         margin-bottom: 25px;
         user-select: none;
+        white-space: pre-wrap;
+        word-wrap: break-word;
     }
 
     .correct { color: #4caf50; text-shadow: 0 0 15px rgba(76, 175, 80, 0.6); }
@@ -777,5 +783,63 @@
     @keyframes scaleIn {
         from { transform: scale(0.9); opacity: 0; }
         to { transform: scale(1); opacity: 1; }
+    }
+
+    /* --- MOBILE OPTIMIZATION --- */
+    @media (max-width: 768px) {
+        .menu-glass {
+            padding: 20px;
+            width: 95%;
+        }
+        
+        .logo-img {
+            height: 45px;
+            padding: 10px 25px;
+        }
+
+        .theme-toggle {
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .segmented-control {
+            margin-right: 0 !important;
+            width: 100%;
+        }
+
+        .segmented-control button {
+            flex: 1;
+        }
+
+        .route-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .mode-buttons, .setup-actions, .difficulty-options {
+            flex-direction: column;
+        }
+
+        .mode-buttons button, .setup-actions button {
+            width: 100%;
+        }
+
+        .word-display {
+            font-size: 2rem;
+            letter-spacing: 2px;
+        }
+        
+        .typing-hud {
+            min-width: unset;
+            width: 95%;
+            padding: 20px 15px;
+        }
+
+        .hud-glass {
+            padding: 15px;
+        }
+
+        .score-details {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
