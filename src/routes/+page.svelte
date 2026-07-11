@@ -2,35 +2,33 @@
     import { onDestroy } from 'svelte';
     import { gameState, playerState, botState } from '$lib/stores';
     import Map from '$lib/components/Map.svelte';
+    import { routes } from '$lib/data/routes';
 
-    const GOAL_DISTANCE = 7; // Karena ada 8 stasiun (index 0-7), jarak maksimal adalah 7
-
-    // Bank Kata
-    const wordBank = {
-        easy: ['batu', 'kota', 'krl', 'tiket', 'cepat', 'jalur', 'rel'],
-        normal: ['komuter', 'gerbong', 'penumpang', 'masinis', 'stasiun', 'bogor', 'jakarta'],
-        hard: ['kereta rel listrik', 'perjalanan aman', 'stasiun transit', 'jadwal keberangkatan']
-    };
+    let activeRoute = $derived(routes.find(r => r.id === $gameState.selectedRouteId) || routes[0]);
+    let goalDistance = $derived(activeRoute.stations.length);
 
     let botAnimationId: number;
     let lastTime: number = 0;
+
+    let showDifficultySetup = $state(false);
 
     onDestroy(() => {
         if (botAnimationId) cancelAnimationFrame(botAnimationId);
     });
 
-    function getRandomWord(difficulty: 'easy' | 'normal' | 'hard') {
-        const words = wordBank[difficulty];
-        const word = words[Math.floor(Math.random() * words.length)];
-        return word.toLowerCase();
+    function getNextStationWord(distance: number) {
+        if (distance < activeRoute.stations.length) {
+            return activeRoute.stations[distance].name.toLowerCase();
+        }
+        return "finish";
     }
 
     function startGame(mode: 'single' | 'vs-bot') {
-        const newWord = getRandomWord($gameState.difficulty);
+        const newWord = getNextStationWord(0);
         playerState.update(state => ({
             ...state,
             currentWord: newWord,
-            currentIndex: 0,
+            typedWord: '',
             correctChars: 0,
             wrongChars: 0,
             wordCompletionPercentage: 0,
@@ -51,6 +49,8 @@
             endTime: 0,
             winner: ''
         }));
+
+        showDifficultySetup = false;
 
         if (botAnimationId) cancelAnimationFrame(botAnimationId);
         
@@ -79,14 +79,16 @@
     }
 
     function loadNextWord() {
-        const newWord = getRandomWord($gameState.difficulty);
-        playerState.update(state => ({
-            ...state,
-            currentWord: newWord,
-            currentIndex: 0,
-            wordCompletionPercentage: 0,
-            totalDistance: state.totalDistance + 1
-        }));
+        playerState.update(state => {
+            const nextDist = state.totalDistance + 1;
+            return {
+                ...state,
+                currentWord: getNextStationWord(nextDist),
+                typedWord: '',
+                wordCompletionPercentage: 0,
+                totalDistance: nextDist
+            };
+        });
     }
 
     function updateBot(timestamp: number) {
@@ -98,9 +100,9 @@
         lastTime = timestamp;
 
         let rate = 0;
-        if ($gameState.difficulty === 'easy') rate = 0.05;
-        else if ($gameState.difficulty === 'normal') rate = 0.10;
-        else rate = 0.15;
+        if ($gameState.difficulty === 'easy') rate = 0.025; // ~30 WPM
+        else if ($gameState.difficulty === 'normal') rate = 0.050; // ~60 WPM
+        else rate = 0.075; // ~90 WPM
 
         botState.update(state => {
             let percentage = state.completionPercentage + (rate * dt);
@@ -110,8 +112,7 @@
                 percentage = 0;
                 distance += 1;
                 
-                // Cek jika bot mencapai garis finish
-                if (distance >= GOAL_DISTANCE) {
+                if (distance >= goalDistance) {
                     finishGame('bot');
                     return { ...state, completionPercentage: 100, totalDistance: distance };
                 }
@@ -128,130 +129,230 @@
     function handleKeydown(event: KeyboardEvent) {
         if ($gameState.status !== 'playing') return;
         
-        if (event.ctrlKey || event.altKey || event.metaKey || event.key.length > 1) {
+        if (event.ctrlKey || event.altKey || event.metaKey) {
             return;
         }
 
+        const isBackspace = event.key === 'Backspace';
+        const isLetterOrSpace = event.key.length === 1;
+
+        if (!isBackspace && !isLetterOrSpace) return;
+
         if (event.key === ' ') {
-            event.preventDefault();
+            event.preventDefault(); 
         }
 
-        const typedChar = event.key.toLowerCase();
-        const targetChar = $playerState.currentWord[$playerState.currentIndex].toLowerCase();
+        playerState.update(state => {
+            let newTypedWord = state.typedWord;
 
-        if (typedChar === targetChar) {
-            playerState.update(state => {
-                const nextIndex = state.currentIndex + 1;
-                const completed = nextIndex >= state.currentWord.length;
-                const percentage = completed ? 100 : (nextIndex / state.currentWord.length) * 100;
-
-                return {
-                    ...state,
-                    currentIndex: nextIndex,
-                    correctChars: state.correctChars + 1,
-                    wordCompletionPercentage: percentage
-                };
-            });
-
-            if ($playerState.currentIndex >= $playerState.currentWord.length) {
-                // Cek jika pemain mencapai garis finish
-                if ($playerState.totalDistance + 1 >= GOAL_DISTANCE) {
-                    playerState.update(s => ({ ...s, totalDistance: s.totalDistance + 1, wordCompletionPercentage: 100 }));
-                    finishGame('player');
-                } else {
-                    setTimeout(loadNextWord, 100);
+            if (isBackspace) {
+                if (newTypedWord.length > 0) {
+                    newTypedWord = newTypedWord.slice(0, -1);
+                }
+            } else if (isLetterOrSpace) {
+                const typedChar = event.key.toLowerCase();
+                // Batasi ekstra 5 karakter agar UI tidak rusak
+                if (newTypedWord.length < state.currentWord.length + 5) {
+                    newTypedWord += typedChar;
                 }
             }
-        } else {
-            playerState.update(state => ({
+
+            let correctPrefixLength = 0;
+            for (let i = 0; i < newTypedWord.length; i++) {
+                if (i < state.currentWord.length && newTypedWord[i] === state.currentWord[i]) {
+                    correctPrefixLength++;
+                } else {
+                    break;
+                }
+            }
+
+            const percentage = (correctPrefixLength / state.currentWord.length) * 100;
+
+            let newCorrectChars = state.correctChars;
+            let newWrongChars = state.wrongChars;
+
+            if (isLetterOrSpace && newTypedWord.length <= state.currentWord.length + 5) {
+                if (correctPrefixLength === newTypedWord.length) {
+                    newCorrectChars++;
+                } else {
+                    newWrongChars++;
+                }
+            }
+
+            return {
                 ...state,
-                wrongChars: state.wrongChars + 1
-            }));
+                typedWord: newTypedWord,
+                correctChars: newCorrectChars,
+                wrongChars: newWrongChars,
+                wordCompletionPercentage: percentage
+            };
+        });
+
+        if ($playerState.typedWord === $playerState.currentWord) {
+            if ($playerState.totalDistance + 1 >= goalDistance) {
+                playerState.update(s => ({ ...s, totalDistance: s.totalDistance + 1, wordCompletionPercentage: 100 }));
+                finishGame('player');
+            } else {
+                setTimeout(loadNextWord, 50);
+            }
         }
     }
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
 
-<main class="container">
-    <h1>CommuType</h1>
+<!-- Map di-render di paling belakang setiap saat -->
+<Map />
+
+<main class="ui-layer">
+    <div class="logo-container">
+        <img src="/logo.png" alt="CommuType Logo" class="logo-img" />
+    </div>
 
     {#if $gameState.status === 'idle'}
-        <div class="menu">
-            <h2>Pilih Mode Permainan</h2>
-            
-            <div class="difficulty-select">
-                <label for="diff">Tingkat Kesulitan:</label>
-                <select id="diff" bind:value={$gameState.difficulty}>
-                    <option value="easy">Mudah (~30 WPM)</option>
-                    <option value="normal">Normal (~60 WPM)</option>
-                    <option value="hard">Sulit (~90+ WPM)</option>
-                </select>
-            </div>
-            
-            <div class="mode-buttons">
-                <button on:click={() => startGame('single')}>Single Player</button>
-                <button on:click={() => startGame('vs-bot')} class="bot-btn">Vs Bot</button>
+        <div class="menu-wrapper">
+            <div class="glass-panel menu-glass">
+                
+                <div class="theme-toggle">
+                    <span class="theme-label">Tema Peta:</span>
+                    <div class="segmented-control">
+                        <button class:active={$gameState.mapTheme === 'dark'} on:click={() => gameState.update(s => ({ ...s, mapTheme: 'dark' }))}>Gelap</button>
+                        <button class:active={$gameState.mapTheme === 'light'} on:click={() => gameState.update(s => ({ ...s, mapTheme: 'light' }))}>Terang</button>
+                    </div>
+                </div>
+
+                {#if !showDifficultySetup}
+                    <h2 style="margin-top: 15px; margin-bottom: 20px;">Pilih Rute Perjalanan</h2>
+                    
+                    <div class="route-grid">
+                        {#each routes as route}
+                            <!-- svelte-ignore a11y-click-events-have-key-events -->
+                            <!-- svelte-ignore a11y-no-static-element-interactions -->
+                            <div 
+                                class="route-card {$gameState.selectedRouteId === route.id ? 'selected' : ''}" 
+                                on:click={() => gameState.update(s => ({ ...s, selectedRouteId: route.id }))}
+                                style="--route-color: {route.color}"
+                            >
+                                <div class="route-color-bar"></div>
+                                <div class="route-info">
+                                    <h4>{route.name}</h4>
+                                    <span>{route.stations.length} Stasiun</span>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+
+                    <div class="mode-buttons">
+                        <button on:click={() => startGame('single')} class="glass-btn cta-btn outline-btn">Latihan (Single)</button>
+                        <button on:click={() => showDifficultySetup = true} class="glass-btn bot-btn cta-btn">Lawan Bot</button>
+                    </div>
+                {:else}
+                    <!-- Overlay Pemilihan Kesulitan Bot -->
+                    <div class="difficulty-setup">
+                        <h2 style="margin-top: 15px; margin-bottom: 30px;">Tingkat Kesulitan Bot</h2>
+                        <div class="diff-options">
+                            <button class="diff-btn {$gameState.difficulty === 'easy' ? 'active' : ''}" on:click={() => gameState.update(s => ({ ...s, difficulty: 'easy' }))}>
+                                <strong>Mudah</strong><br/><small>~30 WPM</small>
+                            </button>
+                            <button class="diff-btn {$gameState.difficulty === 'normal' ? 'active' : ''}" on:click={() => gameState.update(s => ({ ...s, difficulty: 'normal' }))}>
+                                <strong>Normal</strong><br/><small>~60 WPM</small>
+                            </button>
+                            <button class="diff-btn {$gameState.difficulty === 'hard' ? 'active' : ''}" on:click={() => gameState.update(s => ({ ...s, difficulty: 'hard' }))}>
+                                <strong>Sulit</strong><br/><small>~90+ WPM</small>
+                            </button>
+                        </div>
+                        <div class="setup-actions">
+                            <button class="glass-btn outline-btn cta-btn" on:click={() => showDifficultySetup = false}>Kembali</button>
+                            <button class="glass-btn bot-btn cta-btn" on:click={() => startGame('vs-bot')}>Mulai Balapan!</button>
+                        </div>
+                    </div>
+                {/if}
             </div>
         </div>
     {:else}
-        <Map />
+        <!-- HUD Stats Atas -->
+        <div class="hud-top">
+            <div class="glass-panel stat-glass player-stats">
+                <h3>Pemain (Anda)</h3>
+                <div class="stat-row"><span>Jalur:</span> <strong>{activeRoute.name}</strong></div>
+                <div class="stat-row"><span>Stasiun:</span> <strong>{$playerState.totalDistance} / {goalDistance}</strong></div>
+                <div class="stat-row"><span>Benar:</span> <strong>{$playerState.correctChars}</strong></div>
+                <div class="stat-row"><span>Typo:</span> <strong class="wrong">{$playerState.wrongChars}</strong></div>
+            </div>
 
-        <!-- Bagian Pemain -->
-        <div class="stats">
-            <h3 class="span-col">Pemain (Anda)</h3>
-            <div>Kesulitan: <strong>{$gameState.difficulty}</strong></div>
-            <div>Stasiun Anda: <strong>{$playerState.totalDistance} / {GOAL_DISTANCE}</strong></div>
-            <div>Ketikan Benar: <strong>{$playerState.correctChars}</strong></div>
-            <div>Typo (Salah): <strong class="wrong">{$playerState.wrongChars}</strong></div>
-            <div>Progres Anda: <strong>{$playerState.wordCompletionPercentage.toFixed(0)}%</strong></div>
+            {#if $gameState.gameMode === 'vs-bot'}
+                <div class="glass-panel stat-glass bot-stats">
+                    <h3>Bot (Lawan)</h3>
+                    <div class="stat-row"><span>Stasiun:</span> <strong>{$botState.totalDistance} / {goalDistance}</strong></div>
+                    <div class="stat-row"><span>Progres:</span> <strong>{$botState.completionPercentage.toFixed(0)}%</strong></div>
+                    <div class="progress-bar bot-progress">
+                        <div class="progress-fill bot-fill" style="width: {$botState.completionPercentage}%"></div>
+                    </div>
+                </div>
+            {/if}
         </div>
 
-        <!-- Bagian Bot -->
-        {#if $gameState.gameMode === 'vs-bot'}
-            <div class="stats bot-stats">
-                <h3 class="span-col">Bot (Lawan)</h3>
-                <div>Stasiun Bot: <strong>{$botState.totalDistance} / {GOAL_DISTANCE}</strong></div>
-                <div>Progres Bot: <strong>{$botState.completionPercentage.toFixed(0)}%</strong></div>
-                <div class="progress-bar bot-progress span-col">
-                    <div class="progress-fill bot-fill" style="width: {$botState.completionPercentage}%"></div>
+        <!-- Area Mengetik (Tengah Bawah) -->
+        <div class="typing-wrapper">
+            <div class="glass-panel typing-hud">
+                {#if $playerState.totalDistance === 0}
+                    <p class="instruction">
+                        Ketik untuk memberangkatkan kereta: <strong class="destination-text" style="color: #2196f3;">
+                        {activeRoute.stations[0].name}
+                        </strong>
+                    </p>
+                {:else}
+                    <p class="instruction">
+                        Menuju stasiun: <strong class="destination-text">
+                        {activeRoute.stations[Math.min($playerState.totalDistance, activeRoute.stations.length - 1)].name}
+                        </strong>
+                    </p>
+                {/if}
+                
+                <div class="word-display">
+                    {#each Array(Math.max($playerState.currentWord.length, $playerState.typedWord.length)) as _, i}
+                        {@const target = $playerState.currentWord}
+                        {@const typed = $playerState.typedWord}
+                        {@const isTyped = i < typed.length}
+                        {@const isExtra = i >= target.length}
+                        {@const charToRender = isTyped ? typed[i] : target[i]}
+                        {@const isCorrect = isTyped && !isExtra && typed[i] === target[i]}
+                        {@const isWrong = isTyped && (!isCorrect || isExtra)}
+                        
+                        <span 
+                            class:correct={isCorrect}
+                            class:wrong-char={isWrong}
+                            class:extra-char={isExtra}
+                            class:current={i === typed.length}
+                        >
+                            {charToRender === ' ' ? '\u00A0' : charToRender}
+                        </span>
+                    {/each}
+                    
+                    {#if $playerState.typedWord.length === Math.max($playerState.currentWord.length, $playerState.typedWord.length)}
+                        <span class="current" style="width: 10px; display: inline-block;">&nbsp;</span>
+                    {/if}
+                </div>
+                
+                <div class="progress-bar player-progress">
+                    <div class="progress-fill" style="width: {$playerState.wordCompletionPercentage}%"></div>
+                </div>
+
+                <div class="typing-controls">
+                    <button on:click={stopGame} class="glass-btn stop-btn">Berhenti & Kembali</button>
                 </div>
             </div>
-        {/if}
-
-        <div class="game-area">
-            <p class="instruction">Ketik kata di bawah ini secepat mungkin:</p>
-            
-            <div class="word-display">
-                {#each $playerState.currentWord as char, i}
-                    <span 
-                        class:typed={i < $playerState.currentIndex} 
-                        class:current={i === $playerState.currentIndex}
-                    >
-                        {char === ' ' ? '\u00A0' : char}
-                    </span>
-                {/each}
-            </div>
-            
-            <div class="progress-bar player-progress">
-                <div class="progress-fill" style="width: {$playerState.wordCompletionPercentage}%"></div>
-            </div>
-        </div>
-        
-        <div class="controls">
-            <button on:click={stopGame} class="stop-btn">Kembali ke Menu</button>
         </div>
     {/if}
 
     <!-- POPUP FINISH -->
     {#if $gameState.status === 'finished'}
         {@const timeSec = ($gameState.endTime - $gameState.startTime) / 1000}
-        <!-- Standar pengetikan: 1 kata = 5 karakter -->
         {@const wpm = (($playerState.correctChars / 5) / (timeSec / 60)).toFixed(0)}
         {@const accuracy = (($playerState.correctChars / ($playerState.correctChars + $playerState.wrongChars)) * 100).toFixed(1)}
         
         <div class="popup-overlay">
-            <div class="popup-content">
+            <div class="glass-panel popup-content">
                 {#if $gameState.gameMode === 'vs-bot'}
                     <h2 class={$gameState.winner === 'player' ? 'text-win' : 'text-lose'}>
                         {$gameState.winner === 'player' ? '🏆 Anda Menang!' : '💀 Bot Menang!'}
@@ -260,9 +361,11 @@
                     <h2 class="text-win">🏁 Perjalanan Selesai!</h2>
                 {/if}
                 
+                <p>Anda telah menyelesaikan <strong>{activeRoute.name}</strong></p>
+
                 <div class="score-details">
                     <div class="score-box">
-                        <span class="label">Waktu Tempuh</span>
+                        <span class="label">Waktu</span>
                         <span class="val">{timeSec.toFixed(1)} s</span>
                     </div>
                     <div class="score-box">
@@ -280,8 +383,8 @@
                 </div>
                 
                 <div class="mode-buttons" style="margin-top: 30px;">
-                    <button on:click={stopGame} class="stop-btn">Menu Utama</button>
-                    <button on:click={() => startGame($gameState.gameMode)} class="bot-btn">Main Lagi</button>
+                    <button on:click={stopGame} class="glass-btn stop-btn">Menu Utama</button>
+                    <button on:click={() => startGame($gameState.gameMode)} class="glass-btn bot-btn">Main Lagi</button>
                 </div>
             </div>
         </div>
@@ -291,245 +394,325 @@
 <style>
     :global(body) {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background-color: #121212;
+        background-color: #000;
         color: #f5f5f5;
         margin: 0;
+        overflow: hidden; 
+    }
+
+    .ui-layer {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        pointer-events: none; 
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .glass-panel, .logo, .popup-overlay { pointer-events: auto; }
+
+    .logo-container {
+        text-align: center;
+        margin-top: 20px;
+        pointer-events: auto;
+        animation: slideDown 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .logo-img {
+        height: 70px;
+        background: #ffffff; /* White background to blend with the image */
+        padding: 12px 30px;
+        border-radius: 100px; /* Pill shape */
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.2);
+        object-fit: contain;
+        transition: transform 0.3s ease;
+    }
+
+    .logo-img:hover {
+        transform: scale(1.05);
+    }
+
+    /* --- GLASSMORPHISM UTILITIES --- */
+    .glass-panel {
+        background: rgba(25, 25, 25, 0.7);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+    }
+
+    .glass-btn {
+        padding: 12px 24px;
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+        backdrop-filter: blur(4px);
+    }
+
+    .glass-btn:hover {
+        background: rgba(76, 175, 80, 0.8);
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+    }
+    
+    .outline-btn { background: transparent; border: 1px solid rgba(255, 255, 255, 0.3); }
+    .outline-btn:hover { background: rgba(255, 255, 255, 0.2); box-shadow: none; }
+
+    .bot-btn { background: rgba(33, 150, 243, 0.8); }
+    .bot-btn:hover { background: rgba(33, 150, 243, 1); box-shadow: 0 5px 15px rgba(33, 150, 243, 0.5); }
+
+    .stop-btn:hover { background: rgba(244, 67, 54, 0.8); box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4); }
+
+    .cta-btn { font-size: 1.1rem; padding: 14px 28px; font-weight: bold; flex: 1; }
+
+    /* --- MENU --- */
+    .menu-wrapper {
         display: flex;
         justify-content: center;
         align-items: center;
-        min-height: 100vh;
+        flex-grow: 1;
+        padding-bottom: 5vh;
     }
 
-    .container {
-        max-width: 600px;
+    .menu-glass {
+        text-align: center;
+        padding: 40px;
         width: 100%;
-        padding: 2rem;
-        background: #1e1e1e;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        position: relative; /* Penting untuk absolute popup */
+        max-width: 600px; /* Diperlebar untuk menampung grid kartu */
+        animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
-    h1 {
-        text-align: center;
-        color: #4caf50;
-        margin-top: 0;
-        letter-spacing: 1px;
-    }
+    .menu-glass h2 { color: #fff; }
 
-    .menu {
-        text-align: center;
-        background: #2a2a2a;
-        padding: 40px 20px;
-        border-radius: 12px;
-        margin-top: 20px;
-    }
-    
-    .menu h2 {
-        margin-top: 0;
-        margin-bottom: 30px;
-        color: #fff;
-    }
-
-    .difficulty-select {
-        margin-bottom: 30px;
-        font-size: 1.1rem;
-    }
-
-    .difficulty-select select {
-        margin-left: 10px;
-        font-size: 1.1rem;
-        padding: 8px 12px;
-        background: #333;
-        color: #fff;
-        border: 1px solid #555;
-        border-radius: 6px;
-    }
-
-    .mode-buttons {
+    /* THEME TOGGLE */
+    .theme-toggle {
         display: flex;
-        justify-content: center;
-        gap: 20px;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 20px;
     }
+    .theme-label { font-size: 0.9rem; color: #aaa; }
 
-    button {
-        padding: 12px 24px;
-        background: #333;
-        color: #fff;
-        border: 1px solid #444;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 1rem;
-        transition: background 0.2s;
-    }
-
-    button:hover {
-        background: #4caf50;
-        color: #000;
-        border-color: #4caf50;
-    }
-
-    .bot-btn {
-        background: #2196f3;
-        border-color: #1976d2;
-    }
-
-    .bot-btn:hover {
-        background: #64b5f6;
-        color: #000;
-        border-color: #64b5f6;
-    }
-
-    .stop-btn {
-        background: #f44336;
-        border-color: #d32f2f;
-    }
-
-    .stop-btn:hover {
-        background: #ef5350;
-        color: #fff;
-        border-color: #ef5350;
-    }
-
-    h3.span-col {
-        grid-column: 1 / -1;
-        margin: 0 0 10px 0;
-        color: #fff;
-        font-size: 1.1rem;
-        border-bottom: 1px solid #444;
-        padding-bottom: 5px;
-    }
-
-    .stats {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        background: #2a2a2a;
-        padding: 15px;
+    .segmented-control {
+        display: flex;
+        background: rgba(0, 0, 0, 0.5);
         border-radius: 8px;
-        margin-bottom: 15px;
-        font-size: 0.9rem;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
-    .bot-stats {
-        background: #252a34;
-        border: 1px solid #3d4a60;
-    }
-
-    .stats .wrong {
-        color: #f44336;
-    }
-
-    .span-col {
-        grid-column: 1 / -1;
-    }
-
-    .game-area {
-        text-align: center;
-        margin: 30px 0;
-    }
-
-    .instruction {
-        color: #aaa;
+    .segmented-control button {
+        background: transparent;
+        border: none;
+        color: #888;
+        padding: 6px 16px;
         font-size: 0.9rem;
-        margin-bottom: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
     }
-
-    .word-display {
-        font-size: 2.5rem;
+    
+    .segmented-control button.active {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
         font-weight: bold;
-        letter-spacing: 2px;
-        font-family: monospace;
-        background: #090909;
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 15px;
-        user-select: none;
     }
 
-    .typed {
-        color: #4caf50;
+    /* ROUTE CARDS */
+    .route-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 35px;
+        max-height: 350px;
+        overflow-y: auto;
+        padding: 5px;
+        /* Scrollbar custom */
     }
+    .route-grid::-webkit-scrollbar { width: 6px; }
+    .route-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
 
-    .current {
-        color: #ffffff;
-        text-decoration: underline;
-        text-decoration-color: #4caf50;
-        text-decoration-thickness: 4px;
-        text-underline-offset: 4px;
-    }
-
-    span:not(.typed):not(.current) {
-        color: #555;
-    }
-
-    .progress-bar {
-        height: 8px;
-        background: #333;
-        border-radius: 4px;
+    .route-card {
+        background: rgba(0, 0, 0, 0.4);
+        border: 2px solid transparent;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: left;
+        position: relative;
         overflow: hidden;
     }
 
-    .progress-fill {
+    .route-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        transform: translateY(-2px);
+    }
+
+    .route-card.selected {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: var(--route-color);
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.1) inset;
+    }
+
+    .route-color-bar {
+        width: 6px;
         height: 100%;
-        background: #4caf50;
-        transition: width 0.05s ease-out; 
+        position: absolute;
+        left: 0; top: 0;
+        background-color: var(--route-color);
     }
 
-    .bot-progress {
-        margin-top: 5px;
-        background: #1e2430;
+    .route-info { margin-left: 15px; }
+    .route-info h4 { margin: 0 0 5px 0; font-size: 1rem; color: #fff; }
+    .route-info span { font-size: 0.8rem; color: #aaa; }
+
+    /* DIFFICULTY BUTTONS */
+    .diff-options {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 35px;
     }
 
-    .bot-fill {
-        background: #2196f3;
-        transition: none; 
+    .diff-btn {
+        flex: 1;
+        background: rgba(0, 0, 0, 0.4);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 20px 10px;
+        color: #aaa;
+        cursor: pointer;
+        transition: all 0.2s;
     }
 
-    .controls {
+    .diff-btn strong { font-size: 1.1rem; color: #eee; display: block; margin-bottom: 5px; }
+    
+    .diff-btn:hover { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.3); }
+
+    .diff-btn.active {
+        background: rgba(33, 150, 243, 0.15);
+        border-color: #2196f3;
+        box-shadow: 0 0 20px rgba(33, 150, 243, 0.3) inset;
+    }
+    .diff-btn.active strong { color: #fff; }
+
+    .mode-buttons, .setup-actions {
         display: flex;
         justify-content: center;
         gap: 15px;
-        margin-top: 20px;
     }
 
-    /* --------------------------------- */
-    /*          POPUP OVERLAY            */
-    /* --------------------------------- */
+    /* --- HUD STATS (ATAS) --- */
+    .hud-top {
+        display: flex;
+        justify-content: space-between;
+        padding: 0 30px;
+        margin-top: 10px;
+    }
+
+    .stat-glass { padding: 15px 20px; width: 220px; font-size: 0.95rem; }
+
+    .stat-glass h3 {
+        margin: 0 0 10px 0;
+        font-size: 1.1rem;
+        color: #fff;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 8px;
+    }
+
+    .stat-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .stat-row span { color: #aaa; }
+    .wrong { color: #ff5252; text-shadow: 0 0 5px rgba(255,82,82,0.5); }
+
+    /* --- AREA MENGETIK (TENGAH BAWAH) --- */
+    .typing-wrapper {
+        display: flex;
+        justify-content: center;
+        position: absolute;
+        bottom: 8vh;
+        width: 100%;
+    }
+
+    .typing-hud {
+        padding: 30px 40px;
+        text-align: center;
+        min-width: 600px;
+        animation: slideUp 0.3s ease-out;
+    }
+
+    .instruction { color: #ccc; font-size: 1.1rem; margin-top: 0; margin-bottom: 15px; }
+    .destination-text { color: #4caf50; font-size: 1.4rem; letter-spacing: 1px; }
+
+    .word-display {
+        font-size: 3.5rem;
+        font-weight: 700;
+        letter-spacing: 3px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        margin-bottom: 25px;
+        user-select: none;
+    }
+
+    .correct { color: #4caf50; text-shadow: 0 0 15px rgba(76, 175, 80, 0.6); }
+    .wrong-char { color: #ff5252; text-shadow: 0 0 15px rgba(255, 82, 82, 0.6); background: rgba(255, 82, 82, 0.15); border-radius: 4px; }
+    .extra-char { color: #b71c1c; opacity: 0.8; }
+    
+    .current {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        box-shadow: 0 4px 0 #4caf50;
+        animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+        0%, 100% { box-shadow: 0 4px 0 #4caf50; }
+        50% { box-shadow: 0 4px 0 transparent; }
+    }
+
+    span:not(.correct):not(.wrong-char):not(.current) { color: rgba(255, 255, 255, 0.4); }
+
+    .progress-bar {
+        height: 6px;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
+
+    .progress-fill { height: 100%; background: #4caf50; box-shadow: 0 0 10px #4caf50; transition: width 0.05s ease-out; }
+    .bot-progress { margin-top: 10px; margin-bottom: 0; }
+    .bot-fill { background: #2196f3; box-shadow: 0 0 10px #2196f3; transition: none; }
+
+    .typing-controls { margin-top: 15px; }
+
+    /* --- POPUP FINISH --- */
     .popup-overlay {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.85);
+        background: rgba(0,0,0,0.7);
         display: flex;
         justify-content: center;
         align-items: center;
         z-index: 1000;
-        backdrop-filter: blur(5px);
     }
 
     .popup-content {
-        background: #1e1e1e;
         padding: 40px;
-        border-radius: 16px;
-        border: 2px solid #333;
         text-align: center;
         max-width: 500px;
         width: 90%;
-        box-shadow: 0 15px 50px rgba(0,0,0,0.9);
-        animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
-    @keyframes slideUp {
-        from { transform: translateY(50px) scale(0.9); opacity: 0; }
-        to { transform: translateY(0) scale(1); opacity: 1; }
-    }
-
-    .popup-content h2 {
-        font-size: 2.2rem;
-        margin-top: 0;
-        margin-bottom: 30px;
-        text-shadow: 0 2px 10px rgba(0,0,0,0.5);
-    }
+    .popup-content h2 { font-size: 2.2rem; margin-top: 0; }
+    .popup-content p { color: #ccc; font-size: 1.1rem; }
 
     .text-win { color: #4caf50; }
     .text-lose { color: #f44336; }
@@ -538,33 +721,33 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 15px;
+        margin-top: 25px;
     }
 
     .score-box {
-        background: #252525;
+        background: rgba(0, 0, 0, 0.4);
         padding: 15px;
         border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
         display: flex;
         flex-direction: column;
         align-items: center;
-        border: 1px solid #333;
     }
 
-    .score-box .label {
-        font-size: 0.85rem;
-        color: #aaa;
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
+    .score-box .label { font-size: 0.85rem; color: #aaa; margin-bottom: 8px; text-transform: uppercase; }
+    .score-box .val { font-size: 1.8rem; font-weight: bold; color: #fff; }
 
-    .score-box .val {
-        font-size: 1.8rem;
-        font-weight: bold;
-        color: #fff;
+    /* Animations */
+    @keyframes slideUp {
+        from { transform: translateY(30px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
     }
-
-    .score-box .wrong {
-        color: #f44336;
+    @keyframes slideDown {
+        from { transform: translateY(-30px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes scaleIn {
+        from { transform: scale(0.9); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
     }
 </style>

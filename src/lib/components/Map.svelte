@@ -1,139 +1,216 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
     import { playerState, botState, gameState } from '$lib/stores';
+    import { routes } from '$lib/data/routes';
 
-    let pathRef: SVGPathElement;
-    let pathLength = $state(0);
+    let mapElement: HTMLElement;
+    let map: any; 
+    let L: any; 
+
+    let tileLayer: any;
+    let routePolyline: any;
+    let stationMarkers: any[] = [];
+    let playerMarker: any;
+    let botMarker: any;
+
+    let activeRoute = $derived(routes.find(r => r.id === $gameState.selectedRouteId) || routes[0]);
     
-    // Konfigurasi Peta
-    const STATIONS_COUNT = 8;
-    let stations: {x: number, y: number}[] = $state([]);
-
-    onMount(() => {
-        pathLength = pathRef.getTotalLength();
-        
-        // Hitung koordinat stasiun yang disebar merata di sepanjang jalur rel
-        const segmentLen = pathLength / (STATIONS_COUNT - 1);
-        const tempStations = [];
-        for (let i = 0; i < STATIONS_COUNT; i++) {
-            const point = pathRef.getPointAtLength(i * segmentLen);
-            tempStations.push({ x: point.x, y: point.y });
-        }
-        stations = tempStations;
-    });
-
-    // Menghitung posisi kereta (X, Y) menggunakan API SVG getPointAtLength
-    function getTrainPosition(totalDist: number, percentage: number) {
-        if (!pathLength) return { x: 40, y: 100 }; // Fallback koordinat awal
-        
-        const segmentLen = pathLength / (STATIONS_COUNT - 1);
-        
-        // Looping kembali ke awal jika melewati stasiun terakhir
-        const currentSegment = totalDist % (STATIONS_COUNT - 1); 
-        
-        const currentLength = (currentSegment * segmentLen) + (segmentLen * (percentage / 100));
-        
-        // Pastikan tidak melebihi panjang maksimal path
-        const safeLength = Math.min(currentLength, pathLength);
-        const point = pathRef.getPointAtLength(safeLength);
-        
-        return { x: point.x, y: point.y };
+    // Gunakan fungsi biasa agar selalu mengambil data stasiun terbaru
+    function getStations() {
+        return activeRoute.stations;
     }
 
-    // Reaktivitas tinggi (State murni -> Koordinat UI)
-    let playerPos = $derived(getTrainPosition($playerState.totalDistance, $playerState.wordCompletionPercentage));
-    let botPos = $derived(getTrainPosition($botState.totalDistance, $botState.completionPercentage));
+    const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+    const CARTO_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+    function interpolatePos(stationList: any[], distanceIndex: number, percentage: number) {
+        if (distanceIndex === 0) {
+            // Kereta dipanaskan (engine start), belum bergerak dari stasiun 0
+            return { lat: stationList[0].lat, lon: stationList[0].lon };
+        }
+        
+        const startIdx = distanceIndex - 1;
+        const endIdx = distanceIndex;
+        
+        if (endIdx >= stationList.length) {
+            return { lat: stationList[stationList.length - 1].lat, lon: stationList[stationList.length - 1].lon };
+        }
+        
+        const start = stationList[startIdx];
+        const end = stationList[endIdx];
+        const lat = start.lat + (end.lat - start.lat) * (percentage / 100);
+        const lon = start.lon + (end.lon - start.lon) * (percentage / 100);
+        return { lat, lon };
+    }
+
+    let unsubPlayer: () => void;
+    let unsubBot: () => void;
+    let unsubGame: () => void;
+
+    onMount(async () => {
+        const leaflet = await import('leaflet');
+        L = leaflet.default;
+
+        const currentStations = getStations();
+        const startPos = currentStations[0];
+        
+        map = L.map(mapElement, {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([startPos.lat, startPos.lon], 14);
+
+        tileLayer = L.tileLayer($gameState.mapTheme === 'dark' ? CARTO_DARK : CARTO_LIGHT).addTo(map);
+
+        drawRoute();
+
+        const playerIcon = L.divIcon({
+            className: 'player-marker',
+            html: `<div style="background-color:#4caf50; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; box-shadow: 0 0 10px rgba(0,0,0,0.8);">P</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+        playerMarker = L.marker([startPos.lat, startPos.lon], { icon: playerIcon, zIndexOffset: 1000 }).addTo(map);
+
+        if ($gameState.gameMode === 'vs-bot') {
+            const botIcon = L.divIcon({
+                className: 'bot-marker',
+                html: `<div style="background-color:#2196f3; width: 20px; height: 20px; border-radius: 4px; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; box-shadow: 0 0 10px rgba(0,0,0,0.8);">B</div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+            botMarker = L.marker([startPos.lat, startPos.lon], { icon: botIcon, zIndexOffset: 900 }).addTo(map);
+        }
+
+        // Langsung subscribe ke Svelte Store (Lebih aman dari $effect untuk update cepat)
+        unsubPlayer = playerState.subscribe(state => {
+            if (playerMarker && map) {
+                const sts = getStations();
+                const pos = interpolatePos(sts, state.totalDistance, state.wordCompletionPercentage);
+                playerMarker.setLatLng([pos.lat, pos.lon]);
+                
+                // Gunakan animate: false agar ketikan super cepat tidak membuat animasi Leaflet crash/stutter
+                map.setView([pos.lat, pos.lon], map.getZoom(), { animate: false });
+                
+                stationMarkers.forEach((m, i) => {
+                    // Stasiun diwarnai hijau HANYA jika sudah benar-benar dilewati/berangkat
+                    if (i < state.totalDistance) {
+                        m.setStyle({ fillColor: '#4caf50', color: '#fff' }); 
+                    } else {
+                        m.setStyle({ fillColor: '#fff', color: activeRoute.color });
+                    }
+                });
+            }
+        });
+
+        unsubBot = botState.subscribe(state => {
+            if (botMarker && $gameState.gameMode === 'vs-bot') {
+                const sts = getStations();
+                const pos = interpolatePos(sts, state.totalDistance, state.completionPercentage);
+                botMarker.setLatLng([pos.lat, pos.lon]);
+            }
+        });
+
+        unsubGame = gameState.subscribe(state => {
+            if (tileLayer) {
+                const url = state.mapTheme === 'dark' ? CARTO_DARK : CARTO_LIGHT;
+                if (tileLayer._url !== url) {
+                    tileLayer.setUrl(url);
+                }
+            }
+        });
+    });
+
+    onDestroy(() => {
+        if (unsubPlayer) unsubPlayer();
+        if (unsubBot) unsubBot();
+        if (unsubGame) unsubGame();
+        if (map) map.remove();
+    });
+
+    function drawRoute() {
+        if (!map || !L) return;
+        
+        if (routePolyline) map.removeLayer(routePolyline);
+        stationMarkers.forEach(m => map.removeLayer(m));
+        stationMarkers = [];
+
+        const currentStations = getStations();
+        const latlngs = currentStations.map(s => [s.lat, s.lon]);
+        
+        routePolyline = L.polyline(latlngs, {
+            color: activeRoute.color,
+            weight: 6,
+            opacity: 0.9,
+            lineCap: 'round',
+            lineJoin: 'round'
+        }).addTo(map);
+
+        currentStations.forEach(s => {
+            const marker = L.circleMarker([s.lat, s.lon], {
+                radius: 4,
+                fillColor: '#fff',
+                color: activeRoute.color,
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 1
+            }).addTo(map);
+            
+            marker.bindTooltip(s.name, {
+                permanent: true,
+                direction: 'top',
+                className: 'station-tooltip',
+                offset: [0, -5]
+            });
+            
+            stationMarkers.push(marker);
+        });
+    }
+
+    // Effect untuk ganti tema
+    $effect(() => {
+        if (tileLayer) {
+            tileLayer.setUrl($gameState.mapTheme === 'dark' ? CARTO_DARK : CARTO_LIGHT);
+        }
+    });
+
+    // Effect untuk ganti rute
+    $effect(() => {
+        const route = activeRoute;
+        if (map && L) {
+            drawRoute();
+            map.setView([route.stations[0].lat, route.stations[0].lon], 14, { animate: true });
+        }
+    });
 </script>
 
-<div class="map-container">
-    <svg viewBox="0 0 800 160" class="svg-map">
-        <!-- Jalur Rel -->
-        <!-- Jalur ini didesain menyerupai peta transit Commuter Line (berbelok halus) -->
-        <path 
-            bind:this={pathRef}
-            d="M 40 100 L 150 100 Q 180 100 200 80 L 300 80 Q 330 80 350 100 L 500 100 Q 530 100 550 120 L 650 120 Q 680 120 700 100 L 760 100" 
-            fill="none" 
-            stroke="#444" 
-            stroke-width="8" 
-            stroke-linecap="round"
-            stroke-linejoin="round"
-        />
+<svelte:head>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</svelte:head>
 
-        <!-- Garis rel putus-putus untuk estetika -->
-        <path 
-            d="M 40 100 L 150 100 Q 180 100 200 80 L 300 80 Q 330 80 350 100 L 500 100 Q 530 100 550 120 L 650 120 Q 680 120 700 100 L 760 100" 
-            fill="none" 
-            stroke="#222" 
-            stroke-width="4" 
-            stroke-dasharray="12 12"
-            stroke-linecap="round"
-        />
-
-        <!-- Render Titik Stasiun -->
-        {#each stations as station, i}
-            <circle 
-                cx={station.x} 
-                cy={station.y} 
-                r="7" 
-                fill="#1e1e1e" 
-                stroke="#ccc" 
-                stroke-width="3" 
-            />
-            <!-- Nama Stasiun (Opsional, disederhanakan pakai nomor urut) -->
-            <text x={station.x} y={station.y - 15} text-anchor="middle" font-size="12" fill="#888" font-family="sans-serif">
-                ST.{i + 1}
-            </text>
-        {/each}
-
-        <!-- Indikator Kereta Bot (Berada sedikit di atas jalur) -->
-        {#if pathLength > 0}
-            {#if $gameState.gameMode === 'vs-bot'}
-                <g transform="translate({botPos.x}, {botPos.y})" class="train bot-train">
-                    <!-- Ikon Kereta Bot -->
-                    <rect x="-12" y="-18" width="24" height="12" rx="4" fill="#2196f3" />
-                    <rect x="-6" y="-15" width="4" height="4" fill="#fff" opacity="0.5"/>
-                    <rect x="2" y="-15" width="4" height="4" fill="#fff" opacity="0.5"/>
-                    <text x="0" y="-23" text-anchor="middle" font-size="11" font-weight="bold" fill="#2196f3">BOT</text>
-                </g>
-            {/if}
-
-            <!-- Indikator Kereta Pemain (Berada sedikit di bawah jalur) -->
-            <g transform="translate({playerPos.x}, {playerPos.y})" class="train player-train">
-                <!-- Ikon Kereta Player -->
-                <rect x="-12" y="6" width="24" height="12" rx="4" fill="#4caf50" />
-                <rect x="-6" y="9" width="4" height="4" fill="#fff" opacity="0.5"/>
-                <rect x="2" y="9" width="4" height="4" fill="#fff" opacity="0.5"/>
-                <text x="0" y="28" text-anchor="middle" font-size="11" font-weight="bold" fill="#4caf50">ANDA</text>
-            </g>
-        {/if}
-    </svg>
-</div>
+<div class="map-container" bind:this={mapElement}></div>
 
 <style>
     .map-container {
-        width: 100%;
-        background: #151515;
-        border-radius: 12px;
-        margin: 0 0 20px 0;
-        padding: 20px 10px;
-        box-sizing: border-box;
-        border: 1px solid #333;
-        box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
-    }
-    
-    .svg-map {
-        width: 100%;
-        height: auto;
-        display: block;
-    }
-    
-    .train {
-        /* Mencegah blur saat SVG bertransisi */
-        will-change: transform;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        z-index: 0; 
     }
 
-    .player-train {
-        /* Memberikan sedikit transisi untuk ketikan pemain yang sifatnya diskrit per huruf */
-        transition: transform 0.05s ease-out;
+    :global(.station-tooltip) {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #fff !important;
+        font-weight: bold;
+        font-size: 11px;
+        text-shadow: 1px 1px 3px #000, -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000;
+    }
+    
+    :global(.leaflet-tooltip-top:before) {
+        display: none !important; 
     }
 </style>

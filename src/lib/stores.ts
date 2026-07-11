@@ -8,6 +8,8 @@ const initialGameState = {
     status: 'idle' as GameStatus,
     difficulty: 'normal' as Difficulty,
     gameMode: 'vs-bot' as GameMode,
+    selectedRouteId: 'bogor',
+    mapTheme: 'dark' as 'dark' | 'light',
     startTime: 0,
     endTime: 0,
     winner: '' as 'player' | 'bot' | ''
@@ -16,7 +18,7 @@ export const gameState = writable({ ...initialGameState });
 
 const initialPlayerState = {
     currentWord: '',
-    currentIndex: 0,
+    typedWord: '',
     correctChars: 0,
     wrongChars: 0,
     wordCompletionPercentage: 0,
