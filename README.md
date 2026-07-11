@@ -61,7 +61,13 @@ Setiap kata yang Anda ketik akan menggerakkan kereta Anda maju dari satu stasiun
 
 ## 📜 Changelog
 
-### v1.2.0 - Mobile Optimization & UX Polish (Current)
+### v1.3.0 - Blind Test Mode & Accordion UI (Current)
+* 🙈 **Mode Baru (Blind Test)**: Tantangan baru untuk mengetik rute KRL secara buta (tanpa petunjuk teks di layar) untuk menguji hafalan urutan stasiun para pengguna. Nama stasiun di peta disembunyikan dan baru akan terbuka perlahan seiring keberhasilan mengetik.
+* 🗂️ **UI Accordion**: Perombakan menu pemilihan Mode Game (*Single Player*, *Lawan Bot*, *Blind Test*) menjadi tata letak *accordion* yang jauh lebih rapi, terorganisir, dan menghemat ruang dengan sentuhan animasi Svelte (*slide transition*) yang sangat halus.
+* 💅 **UI Polish**: Penyempurnaan konsistensi desain tombol "Mulai", di mana setiap tombol dari seluruh mode permainan kini seragam menggunakan *border* biru ramping bergaya *outline* elegan.
+* 🗺️ **Penyempurnaan Tooltip Peta**: Perbaikan posisi label teks nama stasiun (*tooltip*) pada peta Leaflet agar berada rapi di sisi kanan node (titik) stasiun untuk menghindari teks yang melayang.
+
+### v1.2.0 - Mobile Optimization & UX Polish
 * 📱 **Optimasi Layar Sentuh**: Perombakan tata letak CSS skala besar (melalui *media queries*) untuk memastikan game tampil sempurna, tidak terpotong, dan simetris di layar *smartphone* tipe apa pun.
 * 📏 **Perbaikan Teks Panjang**: Kata yang panjang (seperti "Universitas Indonesia") kini otomatis turun ke baris baru (*word wrap*) tanpa memutus *box* kursor pengetikan.
 * 🧹 **Pembersihan UI**: Menghapus teks instruksi stasiun tujuan yang redundan pada "Mode Stasiun" untuk menghemat ruang vertikal layar yang berharga.

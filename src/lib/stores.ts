@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 
 export type GameStatus = 'idle' | 'playing' | 'finished';
 export type Difficulty = 'easy' | 'normal' | 'hard';
-export type GameMode = 'single' | 'vs-bot';
+export type GameMode = 'single' | 'vs-bot' | 'blind';
 
 const initialGameState = {
     status: 'idle' as GameStatus,

@@ -157,9 +157,9 @@
             
             marker.bindTooltip(s.name, {
                 permanent: true,
-                direction: 'top',
+                direction: 'right',
                 className: 'station-tooltip',
-                offset: [0, -5]
+                offset: [10, 0]
             });
             
             stationMarkers.push(marker);
@@ -179,6 +179,27 @@
         if (map && L) {
             drawRoute();
             map.setView([route.stations[0].lat, route.stations[0].lon], 14, { animate: true });
+        }
+    });
+
+    // Effect untuk menyembunyikan nama stasiun di mode Blind Test
+    $effect(() => {
+        const mode = $gameState.gameMode;
+        const status = $gameState.status;
+        const dist = $playerState.totalDistance;
+        
+        if (stationMarkers && stationMarkers.length > 0) {
+            stationMarkers.forEach((m, i) => {
+                const tooltip = m.getTooltip();
+                if (tooltip) {
+                    // Sembunyikan stasiun yang belum diketik jika sedang main Blind Test
+                    if (mode === 'blind' && status !== 'idle' && i >= dist) {
+                        tooltip.setOpacity(0);
+                    } else {
+                        tooltip.setOpacity(1);
+                    }
+                }
+            });
         }
     });
 </script>
