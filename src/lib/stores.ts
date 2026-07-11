@@ -1,0 +1,37 @@
+import { writable } from 'svelte/store';
+
+export type GameStatus = 'idle' | 'playing' | 'finished';
+export type Difficulty = 'easy' | 'normal' | 'hard';
+export type GameMode = 'single' | 'vs-bot';
+
+const initialGameState = {
+    status: 'idle' as GameStatus,
+    difficulty: 'normal' as Difficulty,
+    gameMode: 'vs-bot' as GameMode,
+    startTime: 0,
+    endTime: 0,
+    winner: '' as 'player' | 'bot' | ''
+};
+export const gameState = writable({ ...initialGameState });
+
+const initialPlayerState = {
+    currentWord: '',
+    currentIndex: 0,
+    correctChars: 0,
+    wrongChars: 0,
+    wordCompletionPercentage: 0,
+    totalDistance: 0
+};
+export const playerState = writable({ ...initialPlayerState });
+
+const initialBotState = {
+    completionPercentage: 0,
+    totalDistance: 0
+};
+export const botState = writable({ ...initialBotState });
+
+export function resetGameStates() {
+    gameState.set({ ...initialGameState });
+    playerState.set({ ...initialPlayerState });
+    botState.set({ ...initialBotState });
+}
