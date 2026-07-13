@@ -61,7 +61,10 @@ Setiap kata yang Anda ketik akan menggerakkan kereta Anda maju dari satu stasiun
 
 ## 📜 Changelog
 
-### v1.3.0 - Blind Test Mode & Accordion UI (Current)
+### v1.3.1 - Vercel Analytics Integration (Current)
+* 📊 **Analitik**: Mengintegrasikan `@vercel/analytics` ke dalam kerangka aplikasi SvelteKit (`+layout.svelte`) untuk melakukan pelacakan (*tracking*) jumlah pengunjung, performa halaman, dan *engagement* metrik pengguna secara *real-time* saat game di-deploy ke produksi.
+
+### v1.3.0 - Blind Test Mode & Accordion UI
 * 🙈 **Mode Baru (Blind Test)**: Tantangan baru untuk mengetik rute KRL secara buta (tanpa petunjuk teks di layar) untuk menguji hafalan urutan stasiun para pengguna. Nama stasiun di peta disembunyikan dan baru akan terbuka perlahan seiring keberhasilan mengetik.
 * 🗂️ **UI Accordion**: Perombakan menu pemilihan Mode Game (*Single Player*, *Lawan Bot*, *Blind Test*) menjadi tata letak *accordion* yang jauh lebih rapi, terorganisir, dan menghemat ruang dengan sentuhan animasi Svelte (*slide transition*) yang sangat halus.
 * 💅 **UI Polish**: Penyempurnaan konsistensi desain tombol "Mulai", di mana setiap tombol dari seluruh mode permainan kini seragam menggunakan *border* biru ramping bergaya *outline* elegan.
