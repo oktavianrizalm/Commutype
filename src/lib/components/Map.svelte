@@ -2,6 +2,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { playerState, botState, gameState } from '$lib/stores';
     import { routes } from '$lib/data/routes';
+    import { PUBLIC_CARTO_API_KEY } from '$env/static/public';
 
     let mapElement: HTMLElement;
     let map: any; 
@@ -20,8 +21,8 @@
         return activeRoute.stations;
     }
 
-    const CARTO_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-    const CARTO_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    const CARTO_DARK = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${PUBLIC_CARTO_API_KEY}`;
+    const CARTO_LIGHT = `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${PUBLIC_CARTO_API_KEY}`;
 
     function interpolatePos(stationList: any[], distanceIndex: number, percentage: number) {
         if (distanceIndex === 0) {
